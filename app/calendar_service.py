@@ -20,13 +20,18 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-# Scope for inserting events into user's calendar
-SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+# Scopes
+CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events"
+GMAIL_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+SCOPES = [CALENDAR_SCOPE]
+COMBINED_SCOPES = [GMAIL_READ_SCOPE, CALENDAR_SCOPE]
 
 ROOT = Path(__file__).resolve().parents[1]
-TOKEN_FILE = ROOT / "calendar_token.json"
+# Primary unified token (shared with Gmail)
+PRIMARY_TOKEN_FILE = ROOT / "token.json"
+# Legacy calendar-only token (kept for backward compatibility)
+LEGACY_CAL_TOKEN_FILE = ROOT / "calendar_token.json"
 CREDENTIALS_FILE = ROOT / "credentials.json"
-GMAIL_TOKEN_FILE = ROOT / "token.json"
 
 # Academic block codes and hall names
 BLOCKS = {
@@ -54,26 +59,33 @@ def get_calendar_service():
     """Authenticate and return a Google Calendar API service."""
     creds = None
 
-    # Prefer dedicated calendar token if present
-    if TOKEN_FILE.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
-    # If no calendar token, try reusing gmail token if it already has calendar scope
-    elif GMAIL_TOKEN_FILE.exists():
+    # 1) Prefer unified token.json if it already includes calendar scope
+    if PRIMARY_TOKEN_FILE.exists():
         try:
-            data = json.loads(GMAIL_TOKEN_FILE.read_text())
+            data = json.loads(PRIMARY_TOKEN_FILE.read_text())
             scopes = set(data.get("scopes", []))
-            if SCOPES[0] in scopes:
-                creds = Credentials.from_authorized_user_file(str(GMAIL_TOKEN_FILE), SCOPES)
+            if CALENDAR_SCOPE in scopes:
+                creds = Credentials.from_authorized_user_file(str(PRIMARY_TOKEN_FILE), SCOPES)
         except Exception:
             creds = None
+
+    # 2) If no unified token with calendar scope, check legacy calendar token
+    if not creds and LEGACY_CAL_TOKEN_FILE.exists():
+        try:
+            creds = Credentials.from_authorized_user_file(str(LEGACY_CAL_TOKEN_FILE), SCOPES)
+        except Exception:
+            creds = None
+
+    # 3) If still missing/invalid, refresh or run a unified OAuth flow (both Gmail + Calendar)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), COMBINED_SCOPES)
             creds = flow.run_local_server(port=0)
-        # Always write/update dedicated calendar token to avoid colliding with Gmail token
-        TOKEN_FILE.write_text(creds.to_json())
+        # Always write/update unified token.json so future runs need only one token
+        PRIMARY_TOKEN_FILE.write_text(creds.to_json())
+
     return build("calendar", "v3", credentials=creds)
 
 

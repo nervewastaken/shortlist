@@ -11,8 +11,11 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-# Minimal scope for read; upgrade to gmail.modify/gmail.send later as needed
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# Unified scopes so a single consent works for Gmail read + Calendar events
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
+]
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN_FILE = ROOT / "token.json"
@@ -64,10 +67,23 @@ def ensure_credentials() -> Credentials:
     Uses a fixed localhost port and forces browser open for reliability.
     """
     creds = None
+    needs_upgrade = False
+
     if TOKEN_FILE.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+        # Check whether saved token has all required scopes
+        try:
+            data = json.loads(TOKEN_FILE.read_text())
+            saved_scopes = set(data.get("scopes", []))
+            needs_upgrade = not set(SCOPES).issubset(saved_scopes)
+        except Exception:
+            needs_upgrade = True
+        try:
+            creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+        except Exception:
+            creds = None
+
+    if needs_upgrade or (not creds or not creds.valid):
+        if creds and creds.expired and creds.refresh_token and not needs_upgrade:
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
