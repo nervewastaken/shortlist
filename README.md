@@ -115,19 +115,3 @@ python -m app.runner
 - Duplicates
   - If the same email is processed multiple times, you might get duplicate events. A de-dup mechanism can be added by checking for an existing event with the same date+title.
 
-
-## Development tips
-
-- Dry-run sign-in only:
-
-```bash
-python -m app.login
-```
-
-- Verbose logging during event creation prints the parsed datetime, location, and link to help verify the extraction.
-
-
-## Security
-
-Never commit `credentials.json`, `token.json`, or `.env`. They are in `.gitignore` by default. Treat all tokens as secrets.
-
