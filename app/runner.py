@@ -9,7 +9,7 @@ from email.header import decode_header, make_header
 
 from app.login import get_gmail_client_and_profile
 from app.parsers import parse_email_attachments
-from app.whatsapp_notifier import send_whatsapp_notification, should_send_whatsapp_notification, start_chussa_automation, stop_chussa_automation
+from app.calendar_service import create_calendar_event, should_create_calendar_event
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE_FILE = ROOT / "state.json"
@@ -246,10 +246,6 @@ def run():
     service, profile = get_gmail_client_and_profile()
     state = load_state()
 
-    # Start chussa automation for WhatsApp auto-sending
-    print("🚀 Starting WhatsApp automation system...")
-    start_chussa_automation()
-
     print("Sandbox runner started. Watching INBOX for newest emails...")
     print(f"Profile: {profile.get('name', 'Unknown')} ({profile.get('registration_number', 'No reg')})")
     poll_seconds = 30
@@ -314,20 +310,18 @@ def run():
                         }
                         print(f"{match_icons.get(overall_match_type, '❓')} {overall_match_type} FOUND!")
                         
-                        # Send WhatsApp notification for confirmed matches that look like shortlisting
-                        if should_send_whatsapp_notification(email_data):
-                            print("📱 Sending WhatsApp shortlisting notification...")
-                            notification_sent = send_whatsapp_notification(
-                                profile, 
-                                parsed_name or profile.get('name', 'Candidate'), 
-                                reg or profile.get('registration_number', ''), 
-                                subject, 
+                        # Create calendar event for confirmed shortlisting emails
+                        if should_create_calendar_event(email_data):
+                            print("📅 Creating calendar event...")
+                            event_created = create_calendar_event(
+                                subject,
+                                body,
                                 mid
                             )
-                            if notification_sent:
-                                print("✅ WhatsApp notification sent successfully!")
+                            if event_created:
+                                print("✅ Calendar event created successfully!")
                             else:
-                                print("❌ Failed to send WhatsApp notification")
+                                print("❌ Failed to create calendar event")
                     
                     # Report attachment analysis for all emails with attachments
                     if attachment_results['total_attachments'] > 0:
@@ -390,8 +384,6 @@ def run():
 
         except KeyboardInterrupt:
             print("Stopping runner.")
-            print("🛑 Stopping WhatsApp automation...")
-            stop_chussa_automation()
             break
         except Exception as e:
             print("Error:", e)
