@@ -1,6 +1,8 @@
 token.json
+
 calendar_token.json
-crendentials.json
+credentials.json
+
 profile.json
 app/__pycache__/
 __pycache__/
@@ -17,4 +19,3 @@ venv/
 /app/parsers/*.pyd
 
 
-        
