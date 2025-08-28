@@ -18,4 +18,4 @@ venv/
 /app/parsers/*.pyo
 /app/parsers/*.pyd
 
-
+data/
