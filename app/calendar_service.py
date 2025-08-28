@@ -1,9 +1,15 @@
-"""
-Calendar integration for shortlist notifications.
-Creates Google Calendar events based on email content.
+"""Calendar integration for shortlist notifications.
+
+This module creates Google Calendar events based on email content.  It first
+tries simple parsing rules and falls back to a small GPT model when no explicit
+date/time can be detected.  The OpenAI key is read from
+``process.env.OPENAIKEY`` (i.e. the ``OPENAIKEY`` environment variable) so the
+user can provide it via a ``.env`` file.
 """
 
 import re
+import os
+import json
 import datetime
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
@@ -58,6 +64,36 @@ def get_calendar_service():
     return build("calendar", "v3", credentials=creds)
 
 
+def _gpt_extract(text: str) -> Tuple[Optional[datetime.datetime], Optional[str], Optional[str]]:
+    """Fallback extraction using a GPT model."""
+    api_key = os.environ.get("OPENAIKEY")
+    if not api_key:
+        return None, None, None
+    try:
+        from openai import OpenAI
+    except Exception:
+        return None, None, None
+    client = OpenAI(api_key=api_key)
+    prompt = (
+        "Extract the event date and time, location (if any) and first URL from "
+        "the following email body. Respond in JSON with keys 'datetime', "
+        "'location', 'link'. Use ISO 8601 for datetime in Asia/Kolkata.\n\n"
+        f"Email:\n{text}"
+    )
+    try:
+        resp = client.responses.create(
+            model="gpt-4o-mini",
+            input=prompt,
+            response_format={"type": "json_object"},
+        )
+        content = resp.output[0].content[0].text
+        data = json.loads(content)
+        dt = dateparser.parse(data.get("datetime")) if data.get("datetime") else None
+        return dt, data.get("location"), data.get("link")
+    except Exception:
+        return None, None, None
+
+
 def extract_event_details(text: str) -> Tuple[Optional[datetime.datetime], Optional[str], Optional[str]]:
     """Extract datetime, location, and link from email text."""
     if not text:
@@ -98,6 +134,13 @@ def extract_event_details(text: str) -> Tuple[Optional[datetime.datetime], Optio
     link_match = re.search(r"(https?://\S+)", text)
     if link_match:
         link = link_match.group(1)
+
+    # If critical information missing, try GPT
+    if not dt or not location or not link:
+        gpt_dt, gpt_loc, gpt_link = _gpt_extract(text)
+        dt = dt or gpt_dt
+        location = location or gpt_loc
+        link = link or gpt_link
 
     return dt, location, link
 
