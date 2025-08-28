@@ -69,12 +69,6 @@ def get_calendar_service():
         except Exception:
             creds = None
 
-    # 2) If no unified token with calendar scope, check legacy calendar token
-    if not creds and LEGACY_CAL_TOKEN_FILE.exists():
-        try:
-            creds = Credentials.from_authorized_user_file(str(LEGACY_CAL_TOKEN_FILE), SCOPES)
-        except Exception:
-            creds = None
 
     # 3) If still missing/invalid, refresh or run a unified OAuth flow (both Gmail + Calendar)
     if not creds or not creds.valid:
@@ -90,7 +84,11 @@ def get_calendar_service():
 
 
 def _gpt_extract(text: str) -> Tuple[Optional[datetime.datetime], Optional[str], Optional[str]]:
-    """Fallback extraction using a GPT model."""
+    """Fallback extraction using a GPT model.
+
+    Returns combined datetime built from separate 'date' and 'time' fields
+    when available to avoid ambiguous single-datetime parsing.
+    """
     api_key = os.environ.get("OPENAIKEY")
     if not api_key:
         return None, None, None
@@ -100,10 +98,18 @@ def _gpt_extract(text: str) -> Tuple[Optional[datetime.datetime], Optional[str],
         return None, None, None
     client = OpenAI(api_key=api_key)
     prompt = (
-        "Extract the event date and time, location (if any) and first URL from "
-        "the following email body. Respond in JSON with keys 'datetime', "
-        "'location', 'link'. Use ISO 8601 for datetime in Asia/Kolkata.\n\n"
-        f"Email:\n{text}"
+        f"""Extract event details from the following text. Respond ONLY as JSON with keys:
+        'date', 'time', 'location', 'link'.
+        - date: in 'YYYY-MM-DD' (Asia/Kolkata)
+        - time: 'HH:MM am/pm' OR 'HH:MM' 24-hour
+        - location: hall/venue or leave empty if unknown
+        - link: first URL if present, else empty
+
+        If any value is unknown, return an empty string for that key.
+
+        Text:
+        {text}
+        """
     )
     try:
         resp = client.responses.create(
@@ -113,8 +119,18 @@ def _gpt_extract(text: str) -> Tuple[Optional[datetime.datetime], Optional[str],
         )
         content = resp.output[0].content[0].text
         data = json.loads(content)
-        dt = dateparser.parse(data.get("datetime")) if data.get("datetime") else None
-        return dt, data.get("location"), data.get("link")
+        date_str = (data.get("date") or "").strip()
+        time_str = (data.get("time") or "").strip()
+        dt = None
+        if date_str:
+            try:
+                dt = dateparser.parse(f"{date_str} {time_str}".strip(), fuzzy=True, dayfirst=True)
+            except Exception:
+                try:
+                    dt = dateparser.parse(date_str, fuzzy=True, dayfirst=True)
+                except Exception:
+                    dt = None
+        return dt, (data.get("location") or None), (data.get("link") or None)
     except Exception:
         return None, None, None
 

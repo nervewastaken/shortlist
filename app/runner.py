@@ -178,6 +178,52 @@ def evaluate_match(profile: dict, parsed_name: str, parsed_reg: str, sender_emai
     else:
         return "NO_MATCH"
 
+def text_contains_name(text: str, name: str) -> bool:
+    if not text or not name:
+        return False
+    # Normalize whitespace and case
+    t = re.sub(r"\s+", " ", text).lower()
+    n = re.sub(r"\s+", " ", name).lower().strip()
+    if not n:
+        return False
+    # Require that all name words appear in order (loose match)
+    parts = [p for p in n.split(" ") if p]
+    idx = 0
+    for p in parts:
+        found = t.find(p, idx)
+        if found == -1:
+            return False
+        idx = found + len(p)
+    return True
+
+def evaluate_content_match(profile: dict, subject: str, body: str) -> str:
+    """Evaluate match from subject/body content (not just headers).
+
+    - Name match is robust to extra whitespace and order
+    - Reg number exact pattern match (e.g., 22BCE2382)
+    - Email match for both campus and personal addresses
+    """
+    text = f"{subject}\n{body}" if body else subject or ""
+    text_lower = text.lower()
+
+    prof_name = (profile.get("name") or "").strip()
+    prof_reg = (profile.get("registration_number") or "").strip()
+    prof_gmail = (profile.get("gmail_address") or "").strip().lower()
+    prof_personal = (profile.get("personal_email") or "").strip().lower()
+
+    name_match = text_contains_name(text, prof_name)
+    reg_match = bool(prof_reg) and bool(re.search(re.escape(prof_reg), text, re.IGNORECASE))
+    gmail_match = bool(prof_gmail) and (prof_gmail in text_lower)
+    personal_match = bool(prof_personal) and (prof_personal in text_lower)
+
+    if name_match and (reg_match or gmail_match or personal_match):
+        return "CONFIRMED_MATCH"
+    elif name_match:
+        return "POSSIBILITY"
+    elif reg_match or gmail_match or personal_match:
+        return "PARTIAL_MATCH"
+    return "NO_MATCH"
+
 def log_match_to_data(profile: dict, email_data: dict):
     """
     Log a match between profile and email to the data directory.
@@ -266,8 +312,16 @@ def run():
                 # 2) Extract Name + RegNo from that display name
                 parsed_name, reg = split_name_and_reg(display_name)
 
-                # 3) Check for matches with logged-in user's profile using new criteria
-                match_type = evaluate_match(profile, parsed_name, reg, addr)
+                # 3) Check for matches with logged-in user's profile using new criteria (headers)
+                match_type_header = evaluate_match(profile, parsed_name, reg, addr)
+
+                # 3b) Extract body early and evaluate content-based match (subject/body)
+                body = extract_text(payload)
+                match_type_content = evaluate_content_match(profile, subject or "", body or "")
+
+                # Choose strongest between header-based and content-based
+                hierarchy = ['CONFIRMED_MATCH', 'POSSIBILITY', 'PARTIAL_MATCH', 'NO_MATCH']
+                match_type = min([match_type_header, match_type_content], key=lambda t: hierarchy.index(t))
                 
                 # 4) Parse attachments for ALL emails (whether they match or not)
                 print(f"📎 Checking attachments for email {mid}...")
@@ -285,7 +339,7 @@ def run():
                 
                 # 6) If we have any match (email content or attachments), log it
                 if overall_match_type != "NO_MATCH" or attachment_results['total_attachments'] > 0:
-                    body = extract_text(payload)
+                    # body already extracted above
                     email_data = {
                         "message_id": mid,
                         "from_display_name": display_name,
