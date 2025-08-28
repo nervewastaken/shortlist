@@ -2,6 +2,12 @@ token.json
 
 calendar_token.json
 credentials.json
+state.json
+
+
+
+
+
 
 profile.json
 app/__pycache__/
@@ -19,3 +25,5 @@ venv/
 /app/parsers/*.pyd
 
 data/
+
+.env
