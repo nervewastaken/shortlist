@@ -11,8 +11,11 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-# Minimal scope for read; upgrade to gmail.modify/gmail.send later as needed
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# Combined scopes for Gmail and Calendar access
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/calendar"
+]
 
 ROOT = Path(__file__).resolve().parents[1]
 TOKEN_FILE = ROOT / "token.json"

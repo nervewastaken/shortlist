@@ -9,17 +9,12 @@ from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
 
 from dateutil import parser as dateparser
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-# Scope for inserting events into user's calendar
-SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+# Use the same authentication as the main login system
+from app.login import ensure_credentials
 
 ROOT = Path(__file__).resolve().parents[1]
-TOKEN_FILE = ROOT / "calendar_token.json"
-CREDENTIALS_FILE = ROOT / "credentials.json"
 
 # Academic block codes and hall names
 BLOCKS = {
@@ -44,17 +39,8 @@ HALLS = {
 }
 
 def get_calendar_service():
-    """Authenticate and return a Google Calendar API service."""
-    creds = None
-    if TOKEN_FILE.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
-            creds = flow.run_local_server(port=0)
-        TOKEN_FILE.write_text(creds.to_json())
+    """Authenticate and return a Google Calendar API service using shared credentials."""
+    creds = ensure_credentials()
     return build("calendar", "v3", credentials=creds)
 
 
@@ -140,6 +126,7 @@ def should_create_calendar_event(email_data: Dict[str, Any]) -> bool:
     subject = email_data.get("subject", "").lower()
     body_preview = email_data.get("body_preview", "").lower()
 
+    # Keywords for shortlisting notifications
     shortlist_keywords = [
         "shortlist",
         "selected",
@@ -154,6 +141,34 @@ def should_create_calendar_event(email_data: Dict[str, Any]) -> bool:
         "hr interview",
         "final round",
     ]
+    
+    # Keywords for test/exam scheduling (also create calendar events for these)
+    test_keywords = [
+        "test is scheduled",
+        "exam is scheduled", 
+        "assessment is scheduled",
+        "online test",
+        "examination",
+        "test scheduled",
+        "exam scheduled",
+        "test on",
+        "exam on",
+        "assessment on",
+        "coding test",
+        "technical test",
+        "aptitude test",
+        "written test",
+        "online assessment",
+        "please appear for the test",
+        "please appear for the exam",
+        "please appear for the assessment",
+        "please take the test", 
+    ]
 
     combined_text = f"{subject} {body_preview}"
-    return any(keyword in combined_text for keyword in shortlist_keywords)
+    
+    # Create event for either shortlisting OR test scheduling
+    has_shortlist_keywords = any(keyword in combined_text for keyword in shortlist_keywords)
+    has_test_keywords = any(keyword in combined_text for keyword in test_keywords)
+    
+    return has_shortlist_keywords or has_test_keywords
