@@ -389,11 +389,32 @@ def run():
                             filename = result.get('filename', 'unknown')
                             parser_used = result.get('parser_used', 'none')
                             parsing_result = result.get('parsing_result', {})
-                            result_match = parsing_result.get('match_type', 'NO_MATCH')
+                            # Derive a sensible per-file match for document parser outputs
+                            if 'total_rows' in parsing_result:
+                                c = len(parsing_result.get('confirmed_matches', []))
+                                p = len(parsing_result.get('possibilities', []))
+                                r = len(parsing_result.get('partial_matches', []))
+                                if c > 0:
+                                    result_match = 'CONFIRMED_MATCH'
+                                elif p > 0:
+                                    result_match = 'POSSIBILITY'
+                                elif r > 0:
+                                    result_match = 'PARTIAL_MATCH'
+                                else:
+                                    result_match = 'NO_MATCH'
+                            else:
+                                result_match = parsing_result.get('match_type', 'NO_MATCH')
                             
                             if parser_used != 'none':
                                 status_icon = "✅" if result_match != 'NO_MATCH' else "📄"
-                                print(f"   {status_icon} {filename} ({parser_used}): {result_match}")
+                                # Include counts for document parser to avoid confusion
+                                if 'total_rows' in parsing_result:
+                                    c = len(parsing_result.get('confirmed_matches', []))
+                                    p = len(parsing_result.get('possibilities', []))
+                                    r = len(parsing_result.get('partial_matches', []))
+                                    print(f"   {status_icon} {filename} (document): {result_match} [rows: C={c} P={p} R={r}]")
+                                else:
+                                    print(f"   {status_icon} {filename} ({parser_used}): {result_match}")
                             else:
                                 print(f"   ❌ {filename}: Unsupported format")
 

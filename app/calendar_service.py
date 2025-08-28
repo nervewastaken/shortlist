@@ -33,6 +33,39 @@ PRIMARY_TOKEN_FILE = ROOT / "token.json"
 LEGACY_CAL_TOKEN_FILE = ROOT / "calendar_token.json"
 CREDENTIALS_FILE = ROOT / "credentials.json"
 
+# Recognize local env files for convenience
+ENV_FILES = [ROOT / ".env.local", ROOT / ".env"]
+
+def _load_env_files_if_needed():
+    """Load key=value pairs from .env.local/.env into os.environ if not present.
+
+    This is a minimal loader to avoid an extra dependency. It supports lines like:
+    - OPENAIKEY=sk-...
+    - export OPENAIKEY="sk-..."
+    - Comments starting with '#'
+    """
+    for path in ENV_FILES:
+        try:
+            if not path.exists():
+                continue
+            for raw in path.read_text().splitlines():
+                line = raw.strip()
+                if not line or line.startswith('#'):
+                    continue
+                # Allow optional leading 'export'
+                if line.lower().startswith('export '):
+                    line = line[7:].lstrip()
+                if '=' not in line:
+                    continue
+                key, val = line.split('=', 1)
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+        except Exception:
+            # Silently ignore malformed env files
+            pass
+
 # Academic block codes and hall names
 BLOCKS = {
     "PRP": "Pearl Research Park",
@@ -84,40 +117,77 @@ def get_calendar_service():
 
 
 def _gpt_extract(text: str) -> Tuple[Optional[datetime.datetime], Optional[str], Optional[str]]:
-    """Fallback extraction using a GPT model.
+    """Extract event details using a GPT model only.
 
     Returns combined datetime built from separate 'date' and 'time' fields
     when available to avoid ambiguous single-datetime parsing.
     """
+    # Try env directly; if missing, attempt to load from .env.local/.env
     api_key = os.environ.get("OPENAIKEY")
     if not api_key:
+        _load_env_files_if_needed()
+        api_key = os.environ.get("OPENAIKEY")
+    if not api_key:
+        print("⚠️ OPENAIKEY not set; GPT extraction disabled")
         return None, None, None
     try:
         from openai import OpenAI
     except Exception:
+        print("⚠️ openai package not available; GPT extraction disabled")
         return None, None, None
     client = OpenAI(api_key=api_key)
+    # Debug: key presence and input stats
+    try:
+        subj_line = next((ln for ln in (text.splitlines() if text else []) if ln.lower().startswith("subject:")), "")
+        print(f"🧪 GPT extract start | key=present | text_len={len(text or '')} | subject='{subj_line}'")
+    except Exception:
+        pass
     prompt = (
-        f"""Extract event details from the following text. Respond ONLY as JSON with keys:
-        'date', 'time', 'location', 'link'.
-        - date: in 'YYYY-MM-DD' (Asia/Kolkata)
-        - time: 'HH:MM am/pm' OR 'HH:MM' 24-hour
-        - location: hall/venue or leave empty if unknown
-        - link: first URL if present, else empty
+        f"""You are extracting calendar event details from an email. Read BOTH the Subject and the Body.
+        The date/time is often present in the Subject. Return ONLY valid JSON with keys exactly:
+        'date', 'time', 'location', and 'link'.
 
-        If any value is unknown, return an empty string for that key.
+        Rules:
+        - date: 'YYYY-MM-DD' (Asia/Kolkata). Convert formats like '7th July 2025' -> '2025-07-07'.
+        - time: 'HH:MM am/pm' (e.g., '9:00 am') OR 24-hour 'HH:MM'. Convert '9.00 am' -> '9:00 am'.
+        - location: venue/hall name or 'virtual' if clearly online, else empty string.
+        - link: first URL if present, else empty string.
+        - If unknown, set that field to an empty string.
 
-        Text:
+        Example:
+        Subject: Okta online test is scheduled on 7th July 2025 by 9.00 am - virtual mode
+        Body: Test duration: 2 hours
+        Output: {{"date": "2025-07-07", "time": "9:00 am", "location": "virtual", "link": ""}}
+
+        Subject and Body below:
         {text}
         """
     )
     try:
-        resp = client.responses.create(
+        print("📤 Sending to OpenAI chat.completions (gpt-4o-mini) ...")
+        resp = client.chat.completions.create(
             model="gpt-4o-mini",
-            input=prompt,
-            response_format={"type": "json_object"},
+            temperature=0,
+            messages=[
+                {"role": "system", "content": "Extract calendar event details. Return only JSON with keys: date, time, location, link."},
+                {"role": "user", "content": prompt},
+            ],
         )
-        content = resp.output[0].content[0].text
+        # Be tolerant to SDK response variants
+        try:
+            content = resp.choices[0].message.content
+        except Exception:
+            try:
+                content = resp.choices[0]["message"]["content"]
+            except Exception:
+                content = None
+        print(f"📥 GPT raw content length: {len(content or '')}")
+        if content:
+            preview = content if len(content) <= 400 else content[:400] + "..."
+            print(f"📥 GPT raw content preview: {preview}")
+        else:
+            print("❌ GPT returned empty content")
+            return None, None, None
         data = json.loads(content)
         date_str = (data.get("date") or "").strip()
         time_str = (data.get("time") or "").strip()
@@ -130,152 +200,25 @@ def _gpt_extract(text: str) -> Tuple[Optional[datetime.datetime], Optional[str],
                     dt = dateparser.parse(date_str, fuzzy=True, dayfirst=True)
                 except Exception:
                     dt = None
+        print(f"🔎 GPT fields -> date='{date_str}', time='{time_str}', location='{data.get('location','')}', link='{data.get('link','')}'")
+        print(f"🧮 Combined datetime candidate: {dt}")
         return dt, (data.get("location") or None), (data.get("link") or None)
     except Exception:
+        import traceback
+        print("❌ GPT extraction exception:\n" + traceback.format_exc())
         return None, None, None
 
 
 def extract_event_details(text: str) -> Tuple[Optional[datetime.datetime], Optional[str], Optional[str]]:
-    """Extract datetime, location, and link from subject/body text.
+    """Extract datetime, location, and link using GPT only.
 
-    Strategy:
-    - Normalize time formats like '9.00 am' -> '9:00 am'.
-    - Prefer parsing from the first line (subject) to avoid catching footer times.
-    - Look for date+time or time+date pairs within a close window.
-    - Fallback to a fuzzy parse across the whole text.
+    All heuristic/regex parsing is intentionally disabled for consistency.
     """
     if not text:
         return None, None, None
-
-    # Normalize common time formats
-    text_norm = text
-    # Normalize a.m./p.m. variants to am/pm
-    text_norm = re.sub(r"\b(a\.?m\.?)\b", "am", text_norm, flags=re.IGNORECASE)
-    text_norm = re.sub(r"\b(p\.?m\.?)\b", "pm", text_norm, flags=re.IGNORECASE)
-    # Normalize 'noon' and 'midnight'
-    text_norm = re.sub(r"\bnoon\b", "12:00 pm", text_norm, flags=re.IGNORECASE)
-    text_norm = re.sub(r"\bmidnight\b", "12:00 am", text_norm, flags=re.IGNORECASE)
-    # Normalize '9.00 am' -> '9:00 am', and '9 am' -> '9:00 am'
-    text_norm = re.sub(r"\b(\d{1,2})\.(\d{2})\s*(am|pm)\b", r"\1:\2 \3", text_norm, flags=re.IGNORECASE)
-    text_norm = re.sub(r"\b(\d{1,2})\s*(am|pm)\b", r"\1:00 \2", text_norm, flags=re.IGNORECASE)
-
-    # Subject-only window to avoid unrelated times later in the email
-    first_line = text_norm.splitlines()[0] if text_norm.splitlines() else text_norm
-    head = first_line[:240]
-
-    # Attempt to parse an explicit date and time first
-    dt = None
-    # Pattern A: date ... time (e.g., '7th July 2025 by 9:00 am')
-    pat_date_time = re.compile(
-        r"(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4}).{0,120}?(\d{1,2}[:.]?\d{0,2}\s*(?:am|pm))",
-        re.IGNORECASE,
-    )
-    # Pattern B: time ... date (e.g., '9:00 am on 7th July 2025')
-    pat_time_date = re.compile(
-        r"(\d{1,2}[:.]?\d{0,2}\s*(?:am|pm)).{0,120}?(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})",
-        re.IGNORECASE,
-    )
-    match = pat_date_time.search(head) or pat_time_date.search(head)
-    if not match:
-        match = pat_date_time.search(text_norm) or pat_time_date.search(text_norm)
-    if match:
-        try:
-            # Determine which pattern matched and build parse string accordingly
-            if len(match.groups()) == 2:
-                g1, g2 = match.group(1), match.group(2)
-                if pat_date_time.pattern == match.re.pattern:
-                    date_part, time_part = g1, g2
-                else:
-                    time_part, date_part = g1, g2
-                time_part = time_part.replace('.', ':')
-                dt = dateparser.parse(f"{date_part} {time_part}", fuzzy=True, dayfirst=True)
-        except Exception:
-            dt = None
+    dt, location, link = _gpt_extract(text)
     if not dt:
-        # Try date-only and time-only extraction, then combine
-        date_patters = [
-            re.compile(r"\b(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})\b", re.IGNORECASE),
-            re.compile(r"\b([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?,\s*\d{4})\b", re.IGNORECASE),
-        ]
-        time_patterns = [
-            re.compile(r"\b(\d{1,2})(?::|\.)(\d{2})\s*(am|pm)\b", re.IGNORECASE),
-            re.compile(r"\b(\d{1,2})\s*(am|pm)\b", re.IGNORECASE),
-            re.compile(r"\b(\d{1,2})(?::|\.)(\d{2})\b"),  # 24h like 09:00 or 9.00
-            re.compile(r"\b(\d{1,2})(\d{2})\s*(?:hrs|hours|h)\b", re.IGNORECASE),  # 0900 hrs
-        ]
-
-        def find_first(patterns, s1, s2):
-            for p in patterns:
-                m = p.search(s1)
-                if m:
-                    return m
-            for p in patterns:
-                m = p.search(s2)
-                if m:
-                    return m
-            return None
-
-        date_match = None
-        for p in date_patters:
-            date_match = p.search(head) or p.search(text_norm)
-            if date_match:
-                break
-        time_match = find_first(time_patterns, head, text_norm)
-
-        if date_match and time_match:
-            try:
-                date_part = date_match.group(1)
-                # Build time string
-                if time_match.re.pattern.find('hrs') != -1 or time_match.re.pattern.find('hours') != -1:
-                    hh = time_match.group(1)
-                    mm = time_match.group(2)
-                    time_part = f"{hh}:{mm}"
-                elif len(time_match.groups()) == 3:
-                    hh, mm, ap = time_match.group(1), time_match.group(2), time_match.group(3)
-                    time_part = f"{hh}:{mm} {ap}"
-                elif len(time_match.groups()) == 2:
-                    # either HH am/pm or HH:MM 24h
-                    g1, g2 = time_match.group(1), time_match.group(2)
-                    if g2.lower() in ('am','pm'):
-                        time_part = f"{g1}:00 {g2}"
-                    else:
-                        time_part = f"{g1}:{g2}"
-                else:
-                    time_part = time_match.group(0)
-                dt = dateparser.parse(f"{date_part} {time_part}", fuzzy=True, dayfirst=True)
-            except Exception:
-                dt = None
-    if not dt:
-        try:
-            dt = dateparser.parse(text_norm, fuzzy=True, dayfirst=True)
-        except Exception:
-            dt = None
-
-    # Location: check halls first, then block codes
-    location = None
-    for hall, desc in HALLS.items():
-        if re.search(hall, text, re.IGNORECASE):
-            location = desc
-            break
-    if not location:
-        for code, desc in BLOCKS.items():
-            if re.search(code, text, re.IGNORECASE):
-                location = desc
-                break
-
-    # First URL in the text as join link
-    link = None
-    link_match = re.search(r"(https?://\S+)", text_norm)
-    if link_match:
-        link = link_match.group(1)
-
-    # If critical information missing, try GPT
-    if not dt or not location or not link:
-        gpt_dt, gpt_loc, gpt_link = _gpt_extract(text)
-        dt = dt or gpt_dt
-        location = location or gpt_loc
-        link = link or gpt_link
-
+        print("❌ GPT could not extract date/time from text (no fallback active)")
     return dt, location, link
 
 
@@ -327,8 +270,9 @@ def _derive_summary(subject: str) -> str:
 def create_calendar_event(subject: str, body: str, message_id: str) -> bool:
     """Create a calendar event from email details."""
     service = get_calendar_service()
-    # Parse from combined subject + body so dates in subject are not missed
-    start_dt, location, link = extract_event_details(f"{subject}\n\n{body}")
+    # Parse from explicit Subject/Body labeling so GPT recognizes both
+    combined_text = f"Subject: {subject or ''}\n\nBody:\n{body or ''}"
+    start_dt, location, link = extract_event_details(combined_text)
     if not start_dt:
         print("❌ No date/time found in email; skipping calendar event")
         return False
