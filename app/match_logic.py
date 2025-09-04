@@ -28,7 +28,12 @@ def check_name_match(profile_name: str, email_name: str) -> bool:
 
 
 def check_email_match(profile_email: str, email_addr: str) -> bool:
-    """Strict case-insensitive equality for email addresses."""
+    """Strict case-insensitive equality for email addresses.
+
+    Note: We no longer use email address equality as a positive signal for
+    shortlisting. This helper remains for guard checks (e.g., filtering out
+    self-sent messages), but should not contribute to match scoring.
+    """
     if not profile_email or not email_addr:
         return False
     return profile_email.lower().strip() == email_addr.lower().strip()
@@ -55,22 +60,22 @@ def text_contains_name(text: str, name: str) -> bool:
 
 
 def evaluate_match(profile: dict, parsed_name: str, parsed_reg: str, sender_email: str) -> str:
-    """Evaluate header-based match using name + (reg|gmail|personal)."""
+    """Evaluate header-based match using only name and registration number.
+
+    Email address equality is explicitly excluded from positive signals to
+    avoid false positives (e.g., self-sent emails or list recipients).
+    """
     profile_name = profile.get("name", "")
     profile_reg = profile.get("registration_number", "")
-    profile_gmail = profile.get("gmail_address", "")
-    profile_personal = profile.get("personal_email", "")
 
     name_match = check_name_match(profile_name, parsed_name)
     reg_match = bool(profile_reg and parsed_reg and profile_reg.upper() == parsed_reg.upper())
-    gmail_match = check_email_match(profile_gmail, sender_email)
-    personal_match = check_email_match(profile_personal, sender_email)
-
-    if name_match and (reg_match or gmail_match or personal_match):
+    # Do NOT count email matches as a positive signal
+    if name_match and reg_match:
         return "CONFIRMED_MATCH"
     elif name_match:
         return "POSSIBILITY"
-    elif reg_match or gmail_match or personal_match:
+    elif reg_match:
         return "PARTIAL_MATCH"
     else:
         return "NO_MATCH"
@@ -79,28 +84,24 @@ def evaluate_match(profile: dict, parsed_name: str, parsed_reg: str, sender_emai
 def evaluate_content_match(profile: dict, subject: str, body: str) -> str:
     """Evaluate content-based match from subject/body.
 
+    Signals considered:
     - Name match is robust to extra whitespace and order
     - Reg number exact pattern match (string contains profile reg)
-    - Email match for both campus and personal addresses
+    Email address presence is intentionally ignored to prevent false positives.
     """
     text = f"{subject}\n{body}" if body else subject or ""
-    text_lower = text.lower()
 
     prof_name = (profile.get("name") or "").strip()
     prof_reg = (profile.get("registration_number") or "").strip()
-    prof_gmail = (profile.get("gmail_address") or "").strip().lower()
-    prof_personal = (profile.get("personal_email") or "").strip().lower()
 
     name_match = text_contains_name(text, prof_name)
     reg_match = bool(prof_reg) and bool(re.search(re.escape(prof_reg), text, re.IGNORECASE))
-    gmail_match = bool(prof_gmail) and (prof_gmail in text_lower)
-    personal_match = bool(prof_personal) and (prof_personal in text_lower)
-
-    if name_match and (reg_match or gmail_match or personal_match):
+    
+    if name_match and reg_match:
         return "CONFIRMED_MATCH"
     elif name_match:
         return "POSSIBILITY"
-    elif reg_match or gmail_match or personal_match:
+    elif reg_match:
         return "PARTIAL_MATCH"
     return "NO_MATCH"
 
@@ -112,4 +113,3 @@ __all__ = [
     "evaluate_match",
     "evaluate_content_match",
 ]
-

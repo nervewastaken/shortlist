@@ -214,7 +214,6 @@ def ensure_profile(service) -> Dict:
         except EOFError:
             prof["phone_number"] = ""
 
-    prof.setdefault("gmail_display_name", "")
     prof.setdefault("name", "")
     prof.setdefault("registration_number", "")
     prof.setdefault("phone_number", "")

@@ -7,7 +7,8 @@ from app.parsers import parse_email_attachments
 from app.calendar_service import create_calendar_event, should_create_calendar_event
 from app.match_utils import best
 from app.email_utils import header, parse_from_header, split_name_and_reg, extract_text
-from app.match_logic import evaluate_match, evaluate_content_match
+from app.match_logic import evaluate_content_match
+from app.placement_classifier import is_placement_email, CDC_SENDER_WHITELIST
 from app.state_utils import (
     load_state as load_state_file,
     save_state as save_state_file,
@@ -66,18 +67,26 @@ def run():
                 subject = header(headers, "Subject")
                 display_name, addr = parse_from_header(from_raw)
 
-                # 2) Extract Name + RegNo from that display name
+                # Intentionally ignore To/Cc/Bcc and sender for matching. Sender is used
+                # only by the placement classifier (CDC whitelist).
+
+                # 2) Extract Name + RegNo from display name only for potential one-time
+                # profile fill-in (not used for matching logic).
                 parsed_name, reg = split_name_and_reg(display_name)
 
-                # 3) Check for matches with logged-in user's profile using new criteria (headers)
-                match_type_header = evaluate_match(profile, parsed_name, reg, addr)
-
-                # 3b) Extract body early and evaluate content-based match (subject/body)
+                # 3b) Extract body early and run placement classification
                 body = extract_text(payload)
-                match_type_content = evaluate_content_match(profile, subject or "", body or "")
+                accepted, reason = is_placement_email(subject or "", body or "", addr or "")
+                if not accepted:
+                    print(f"Not a placement email ({reason}). Skipping {mid}.")
+                    # Still advance the pointer so we don't reprocess
+                    state["last_message_id"] = mid
+                    save_state_file(state, STATE_FILE)
+                    time.sleep(poll_seconds)
+                    continue
 
-                # Choose strongest between header-based and content-based
-                match_type = best(match_type_header, match_type_content)
+                # Evaluate content-based match (subject/body) only for placement-like emails
+                match_type = evaluate_content_match(profile, subject or "", body or "")
                 
                 # 4) Parse attachments for ALL emails (whether they match or not)
                 print(f"📎 Checking attachments for email {mid}...")
@@ -171,24 +180,14 @@ def run():
                                 print(f"   ❌ {filename}: Unsupported format")
 
                 # 7) Update profile: only fill name/reg if we parsed them from email headers
-                # and they're not already set from login
+                # and they're not already set from login. Do not store or update gmail_display_name.
                 updated = False
-                if display_name and display_name != profile.get("gmail_display_name"):
-                    profile["gmail_display_name"] = display_name; updated = True
-                
-                # Only update name/reg from email if not already set from Google account
                 if parsed_name and not profile.get("name"):
                     profile["name"] = parsed_name; updated = True
                 if reg and not profile.get("registration_number"):
                     profile["registration_number"] = reg; updated = True
-                    
                 if updated:
                     save_profile_file(profile, PROFILE_FILE)
-                    print("Profile updated:", {
-                        "name": profile.get("name"),
-                        "registration_number": profile.get("registration_number"),
-                        "gmail_display_name": profile.get("gmail_display_name"),
-                    })
 
                 # 8) Print summary (reuse body extracted earlier)
                 print(f"\nNew email {mid}\nFrom: {display_name} <{addr}>\nSubject: {subject}")
