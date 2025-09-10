@@ -17,7 +17,8 @@ from typing import Tuple
 # CDC sender whitelist: always treat as placement-related
 CDC_SENDER_WHITELIST = {
     "vitianscdc2026@vitstudent.ac.in",
-    "krish.verma2022@vitstudent.ac.in"
+    "krish.verma2022@vitstudent.ac.in" #testing
+    "tanmay.agrawal2022@vitstudent.ac.in" #testing
 }
 
 
