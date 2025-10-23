@@ -8,7 +8,13 @@ from app.calendar_service import create_calendar_event, should_create_calendar_e
 from app.match_utils import best
 from app.email_utils import header, parse_from_header, split_name_and_reg, extract_text
 from app.match_logic import evaluate_content_match
-from app.placement_classifier import is_placement_email, CDC_SENDER_WHITELIST
+# Simple whitelist of trusted CDC sender addresses. Only emails from these
+# senders are processed by downstream microservices.
+CDC_SENDER_WHITELIST = {
+    "vitianscdc2026@vitstudent.ac.in",
+    "krish.verma2022@vitstudent.ac.in",
+    "tanmay.agrawal2022@vitstudent.ac.in",
+}
 from app.state_utils import (
     load_state as load_state_file,
     save_state as save_state_file,
@@ -67,18 +73,18 @@ def run():
                 subject = header(headers, "Subject")
                 display_name, addr = parse_from_header(from_raw)
 
-                # Intentionally ignore To/Cc/Bcc and sender for matching. Sender is used
-                # only by the placement classifier (CDC whitelist).
+                # Intentionally ignore To/Cc/Bcc for matching. Sender is only used
+                # for the CDC whitelist check before running any microservice.
 
                 # 2) Extract Name + RegNo from display name only for potential one-time
                 # profile fill-in (not used for matching logic).
                 parsed_name, reg = split_name_and_reg(display_name)
 
-                # 3b) Extract body early and run placement classification
+                # 3b) Extract body early and enforce sender whitelist before any microservice
                 body = extract_text(payload)
-                accepted, reason = is_placement_email(subject or "", body or "", addr or "")
-                if not accepted:
-                    print(f"Not a placement email ({reason}). Skipping {mid}.")
+                sender = (addr or "").strip().lower()
+                if sender not in CDC_SENDER_WHITELIST:
+                    print(f"Sender not whitelisted: {sender}. Skipping {mid}.")
                     # Still advance the pointer so we don't reprocess
                     state["last_message_id"] = mid
                     save_state_file(state, STATE_FILE)
@@ -120,6 +126,7 @@ def run():
                     
                     # Only log to data directory if there's an actual match
                     if overall_match_type != "NO_MATCH":
+                        
                         log_match_to_data(profile, email_data, DATA_DIR)
                         update_state_with_match(state, email_data, overall_match_type)
                         
