@@ -7,7 +7,14 @@ from app.parsers import parse_email_attachments
 from app.calendar_service import create_calendar_event, should_create_calendar_event
 from app.match_utils import best
 from app.email_utils import header, parse_from_header, split_name_and_reg, extract_text
-from app.match_logic import evaluate_match, evaluate_content_match
+from app.match_logic import evaluate_content_match
+# Simple whitelist of trusted CDC sender addresses. Only emails from these
+# senders are processed by downstream microservices.
+CDC_SENDER_WHITELIST = {
+    "vitianscdc2026@vitstudent.ac.in",
+    "krish.verma2022@vitstudent.ac.in",
+    "tanmay.agrawal2022@vitstudent.ac.in",
+}
 from app.state_utils import (
     load_state as load_state_file,
     save_state as save_state_file,
@@ -67,18 +74,26 @@ def run():
                 subject = header(headers, "Subject")
                 display_name, addr = parse_from_header(from_raw)
 
-                # 2) Extract Name + RegNo from that display name
+                # Intentionally ignore To/Cc/Bcc for matching. Sender is only used
+                # for the CDC whitelist check before running any microservice.
+
+                # 2) Extract Name + RegNo from display name only for potential one-time
+                # profile fill-in (not used for matching logic).
                 parsed_name, reg = split_name_and_reg(display_name)
 
-                # 3) Check for matches with logged-in user's profile using new criteria (headers)
-                match_type_header = evaluate_match(profile, parsed_name, reg, addr)
-
-                # 3b) Extract body early and evaluate content-based match (subject/body)
+                # 3b) Extract body early and enforce sender whitelist before any microservice
                 body = extract_text(payload)
-                match_type_content = evaluate_content_match(profile, subject or "", body or "")
+                sender = (addr or "").strip().lower()
+                if sender not in CDC_SENDER_WHITELIST:
+                    print(f"Sender not whitelisted: {sender}. Skipping {mid}.")
+                    # Still advance the pointer so we don't reprocess
+                    state["last_message_id"] = mid
+                    save_state_file(state, STATE_FILE)
+                    time.sleep(poll_seconds)
+                    continue
 
-                # Choose strongest between header-based and content-based
-                match_type = best(match_type_header, match_type_content)
+                # Evaluate content-based match (subject/body) only for placement-like emails
+                match_type = evaluate_content_match(profile, subject or "", body or "")
                 
                 # 4) Parse attachments for ALL emails (whether they match or not)
                 log(f"📎 Checking attachments for email {mid}...")
@@ -112,6 +127,7 @@ def run():
                     
                     # Only log to data directory if there's an actual match
                     if overall_match_type != "NO_MATCH":
+                        
                         log_match_to_data(profile, email_data, DATA_DIR)
                         update_state_with_match(state, email_data, overall_match_type)
                         
@@ -172,24 +188,22 @@ def run():
                                 log(f"   ❌ {filename}: Unsupported format")
 
                 # 7) Update profile: only fill name/reg if we parsed them from email headers
-                # and they're not already set from login
+                # and they're not already set from login. Do not store or update gmail_display_name.
                 updated = False
-                if display_name and display_name != profile.get("gmail_display_name"):
-                    profile["gmail_display_name"] = display_name; updated = True
-                
-                # Only update name/reg from email if not already set from Google account
                 if parsed_name and not profile.get("name"):
                     profile["name"] = parsed_name; updated = True
                 if reg and not profile.get("registration_number"):
                     profile["registration_number"] = reg; updated = True
-                    
                 if updated:
                     save_profile_file(profile, PROFILE_FILE)
+<<<<<<< HEAD
                     log("Profile updated: " + str({
                         "name": profile.get("name"),
                         "registration_number": profile.get("registration_number"),
                         "gmail_display_name": profile.get("gmail_display_name"),
                     }))
+=======
+>>>>>>> 621266f485c635371474bbae852cc98b572a50de
 
                 # 8) Print summary (reuse body extracted earlier)
                 log(f"\nNew email {mid}\nFrom: {display_name} <{addr}>\nSubject: {subject}")
