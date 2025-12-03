@@ -1,0 +1,151 @@
+.stats {
+  width: 100%;
+}
+
+.stats-description {
+  color: #666;
+  margin-top: 0.5rem;
+}
+
+.stats-grid-large {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+.stat-card-large {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.stat-card-large:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
+}
+
+.stat-card-large.total {
+  border-top: 4px solid #667eea;
+}
+
+.stat-card-large.confirmed {
+  border-top: 4px solid #28a745;
+}
+
+.stat-card-large.possibility {
+  border-top: 4px solid #ffc107;
+}
+
+.stat-card-large.partial {
+  border-top: 4px solid #17a2b8;
+}
+
+.stat-icon-large {
+  font-size: 3.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.stat-value-large {
+  font-size: 3rem;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 0.5rem;
+}
+
+.stat-label-large {
+  color: #666;
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.stat-percentage {
+  color: #28a745;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.distribution-chart {
+  margin-top: 1.5rem;
+}
+
+.chart-bar {
+  margin-bottom: 1.5rem;
+}
+
+.chart-bar:last-child {
+  margin-bottom: 0;
+}
+
+.chart-label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #555;
+}
+
+.chart-bar-container {
+  height: 30px;
+  background: #f0f0f0;
+  border-radius: 15px;
+  overflow: hidden;
+  position: relative;
+}
+
+.chart-bar-fill {
+  height: 100%;
+  border-radius: 15px;
+  transition: width 0.5s ease;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 10px;
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.chart-bar-fill.confirmed {
+  background: linear-gradient(90deg, #28a745, #20c997);
+}
+
+.chart-bar-fill.possibility {
+  background: linear-gradient(90deg, #ffc107, #ffb300);
+}
+
+.chart-bar-fill.partial {
+  background: linear-gradient(90deg, #17a2b8, #138496);
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+.info-item {
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border-left: 3px solid #667eea;
+}
+
+.info-item strong {
+  display: block;
+  color: #667eea;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.info-item span {
+  color: #333;
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+

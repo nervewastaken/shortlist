@@ -22,6 +22,7 @@ from app.state_utils import (
     log_match_to_data,
     update_state_with_match,
 )
+from app.log_stream import log
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE_FILE = ROOT / "state.json"
@@ -56,8 +57,8 @@ def run():
     service, profile = get_gmail_client_and_profile()
     state = load_state_file(STATE_FILE)
 
-    print("Sandbox runner started. Watching INBOX for newest emails...")
-    print(f"Profile: {profile.get('name', 'Unknown')} ({profile.get('registration_number', 'No reg')})")
+    log("Sandbox runner started. Watching INBOX for newest emails...")
+    log(f"Profile: {profile.get('name', 'Unknown')} ({profile.get('registration_number', 'No reg')})")
     poll_seconds = 30
 
     while True:
@@ -95,7 +96,7 @@ def run():
                 match_type = evaluate_content_match(profile, subject or "", body or "")
                 
                 # 4) Parse attachments for ALL emails (whether they match or not)
-                print(f"📎 Checking attachments for email {mid}...")
+                log(f"📎 Checking attachments for email {mid}...")
                 attachment_results = parse_email_attachments(service, mid, profile)
                 
                 # 5) Determine overall match considering both email content and attachments
@@ -107,7 +108,7 @@ def run():
                     upgraded = best(prev, att_overall)
                     if upgraded != prev:
                         overall_match_type = upgraded
-                        print(f"📎 Attachments upgraded match type to: {overall_match_type}")
+                        log(f"📎 Attachments upgraded match type to: {overall_match_type}")
                 
                 # 6) If we have any match (email content or attachments), log it
                 if overall_match_type != "NO_MATCH" or attachment_results['total_attachments'] > 0:
@@ -130,27 +131,27 @@ def run():
                         log_match_to_data(profile, email_data, DATA_DIR)
                         update_state_with_match(state, email_data, overall_match_type)
                         
-                        print(f"{MATCH_ICONS.get(overall_match_type, '❓')} {overall_match_type} FOUND!")
+                        log(f"{MATCH_ICONS.get(overall_match_type, '❓')} {overall_match_type} FOUND!")
                         
                         # Create calendar event for confirmed shortlisting emails
                         if should_create_calendar_event(email_data):
-                            print("📅 Creating calendar event...")
+                            log("📅 Creating calendar event...")
                             event_created = create_calendar_event(
                                 subject,
                                 body,
                                 mid
                             )
                             if event_created:
-                                print("✅ Calendar event created successfully!")
+                                log("✅ Calendar event created successfully!")
                             else:
-                                print("❌ Failed to create calendar event")
+                                log("❌ Failed to create calendar event")
                     
                     # Report attachment analysis for all emails with attachments
                     if attachment_results['total_attachments'] > 0:
-                        print(f"📎 Analyzed {attachment_results['total_attachments']} attachments:")
-                        print(f"   └─ Confirmed matches: {attachment_results['summary']['confirmed_matches']}")
-                        print(f"   └─ Possibilities: {attachment_results['summary']['possibilities']}")
-                        print(f"   └─ Partial matches: {attachment_results['summary']['partial_matches']}")
+                        log(f"📎 Analyzed {attachment_results['total_attachments']} attachments:")
+                        log(f"   └─ Confirmed matches: {attachment_results['summary']['confirmed_matches']}")
+                        log(f"   └─ Possibilities: {attachment_results['summary']['possibilities']}")
+                        log(f"   └─ Partial matches: {attachment_results['summary']['partial_matches']}")
                         
                         # Show individual files processed
                         for result in attachment_results.get('parsing_results', []):
@@ -180,11 +181,11 @@ def run():
                                     c = len(parsing_result.get('confirmed_matches', []))
                                     p = len(parsing_result.get('possibilities', []))
                                     r = len(parsing_result.get('partial_matches', []))
-                                    print(f"   {status_icon} {filename} (document): {result_match} [rows: C={c} P={p} R={r}]")
+                                    log(f"   {status_icon} {filename} (document): {result_match} [rows: C={c} P={p} R={r}]")
                                 else:
-                                    print(f"   {status_icon} {filename} ({parser_used}): {result_match}")
+                                    log(f"   {status_icon} {filename} ({parser_used}): {result_match}")
                             else:
-                                print(f"   ❌ {filename}: Unsupported format")
+                                log(f"   ❌ {filename}: Unsupported format")
 
                 # 7) Update profile: only fill name/reg if we parsed them from email headers
                 # and they're not already set from login. Do not store or update gmail_display_name.
@@ -195,31 +196,119 @@ def run():
                     profile["registration_number"] = reg; updated = True
                 if updated:
                     save_profile_file(profile, PROFILE_FILE)
+<<<<<<< HEAD
+                    log("Profile updated: " + str({
+                        "name": profile.get("name"),
+                        "registration_number": profile.get("registration_number"),
+                        "gmail_display_name": profile.get("gmail_display_name"),
+                    }))
+=======
+>>>>>>> 621266f485c635371474bbae852cc98b572a50de
 
                 # 8) Print summary (reuse body extracted earlier)
-                print(f"\nNew email {mid}\nFrom: {display_name} <{addr}>\nSubject: {subject}")
+                log(f"\nNew email {mid}\nFrom: {display_name} <{addr}>\nSubject: {subject}")
                 if parsed_name or reg:
-                    print(f"Parsed: Name='{parsed_name}', Reg='{reg}'")
-                print(f"—\n{(body or '')[:400]}...\n")
+                    log(f"Parsed: Name='{parsed_name}', Reg='{reg}'")
+                log(f"—\n{(body or '')[:400]}...\n")
 
                 # 9) Persist last processed message id
                 state["last_message_id"] = mid
                 save_state_file(state, STATE_FILE)
                 
                 # Print summary statistics
-                print(f"📊 Running totals:")
-                print(f"   🎯 Confirmed: {len(state.get('confirmed_matches', []))}")
-                print(f"   🤔 Possibilities: {len(state.get('possibilities', []))}")
-                print(f"   📧 Partial: {len(state.get('partial_matches', []))}")
+                log(f"📊 Running totals:")
+                log(f"   🎯 Confirmed: {len(state.get('confirmed_matches', []))}")
+                log(f"   🤔 Possibilities: {len(state.get('possibilities', []))}")
+                log(f"   📧 Partial: {len(state.get('partial_matches', []))}")
 
             time.sleep(poll_seconds)
 
         except KeyboardInterrupt:
-            print("Stopping runner.")
+            log("Stopping runner.")
             break
         except Exception as e:
-            print("Error:", e)
+            log(f"Error: {e}")
             time.sleep(min(300, poll_seconds * 2))
 
 if __name__ == "__main__":
     run()
+
+
+def backfill_latest(count: int = 50) -> dict:
+    """
+    Process the latest 'count' emails from INBOX (newest first).
+    Useful to backfill matches from previous emails.
+    Returns a summary dict with totals.
+    """
+    service, profile = get_gmail_client_and_profile()
+    state = load_state_file(STATE_FILE)
+
+    count = max(1, min(500, int(count)))
+    log(f"🔄 Backfill starting for latest {count} emails...")
+
+    # List latest message ids
+    ids: list[str] = []
+    try:
+        res = service.users().messages().list(userId="me", q="in:inbox", maxResults=count).execute()
+        ids = [m["id"] for m in res.get("messages", [])]
+    except Exception as e:
+        log(f"Backfill failed to list messages: {e}")
+        return {"success": False, "processed": 0, "matched": 0, "error": str(e)}
+
+    processed = 0
+    matched = 0
+
+    for mid in ids:
+        try:
+            # Reuse the same per-message processing logic as in the watcher
+            msg = fetch_full(service, mid)
+            payload = msg.get("payload", {})
+            headers = payload.get("headers", [])
+
+            from_raw = header(headers, "From")
+            subject = header(headers, "Subject")
+            display_name, addr = parse_from_header(from_raw)
+
+            parsed_name, reg = split_name_and_reg(display_name)
+            match_type_header = evaluate_match(profile, parsed_name, reg, addr)
+
+            body = extract_text(payload)
+            match_type_content = evaluate_content_match(profile, subject or "", body or "")
+            match_type = best(match_type_header, match_type_content)
+
+            attachment_results = parse_email_attachments(service, mid, profile)
+
+            overall_match_type = match_type
+            att_overall = attachment_results.get('overall_match_type', 'NO_MATCH')
+            if att_overall != 'NO_MATCH':
+                upgraded = best(overall_match_type, att_overall)
+                overall_match_type = upgraded
+
+            if overall_match_type != "NO_MATCH" or attachment_results.get('total_attachments', 0) > 0:
+                email_data = {
+                    "message_id": mid,
+                    "from_display_name": display_name,
+                    "from_email": addr,
+                    "parsed_name": parsed_name,
+                    "parsed_reg": reg,
+                    "subject": subject,
+                    "body_preview": (body or "")[:400],
+                    "match_type": overall_match_type,
+                    "attachments": attachment_results
+                }
+                if overall_match_type != "NO_MATCH":
+                    log_match_to_data(profile, email_data, DATA_DIR)
+                    update_state_with_match(state, email_data, overall_match_type)
+                    matched += 1
+
+            # keep advancing last_message_id so normal runner will skip these next time
+            if mid != state.get("last_message_id"):
+                state["last_message_id"] = mid
+                save_state_file(state, STATE_FILE)
+
+            processed += 1
+        except Exception as e:
+            log(f"Backfill error for {mid}: {e}")
+
+    log(f"✅ Backfill complete. Processed: {processed}, Matches: {matched}")
+    return {"success": True, "processed": processed, "matched": matched}

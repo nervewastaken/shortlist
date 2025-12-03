@@ -36,6 +36,17 @@ pyasn1==0.6.1
 pyasn1_modules==0.4.2
 pydantic==2.11.7
 pydantic_core==2.33.2
+<<<<<<< HEAD
+PyGetWindow==0.0.9
+PyMsgBox==1.0.9
+# macOS-only (won’t install on Windows)
+pyobjc-core==11.1 ; sys_platform == "darwin"
+pyobjc-framework-Cocoa==11.1 ; sys_platform == "darwin"
+pyobjc-framework-Quartz==11.1 ; sys_platform == "darwin"
+rubicon-objc==0.5.2 ; sys_platform == "darwin"
+
+=======
+>>>>>>> 621266f485c635371474bbae852cc98b572a50de
 pyparsing==3.2.3
 PyPDF2==3.0.1
 python-dateutil==2.9.0.post0
@@ -54,3 +65,5 @@ typing_extensions==4.15.0
 tzdata==2025.2
 uritemplate==4.2.0
 urllib3==2.5.0
+flask==3.0.0
+flask-cors==4.0.0

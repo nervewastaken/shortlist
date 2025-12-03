@@ -16,6 +16,7 @@ Time zone defaults to `Asia/Kolkata`.
 1) Requirements
 
 - Python 3.10+
+- Node.js 16+ (for frontend)
 - A Google Cloud project with:
   - Gmail API enabled
   - Google Calendar API enabled
@@ -83,10 +84,38 @@ python -m app.runner
 
 - `app/login.py` — Unified OAuth login (Gmail + Calendar scopes) and profile enrichment
 - `app/runner.py` — Main loop that watches the inbox, classifies matches, and triggers events
+- `app/api.py` — Flask API backend for the web frontend
 - `app/calendar_service.py` — Event extraction and Calendar API integration
 - `app/parsers/` — Attachment parsers used for extra match signals
+- `frontend/` — React frontend application
 - `requirements.txt` — Python dependencies
 - `data/` — Match logs (`match_*.json`) and artifacts
+
+## Frontend Application
+
+A modern React web interface is available for viewing matches, statistics, and managing your profile.
+
+### Running the Frontend
+
+1. **Install frontend dependencies:**
+   ```bash
+   cd frontend
+   npm install
+   ```
+
+2. **Start the Flask API backend** (in a separate terminal):
+   ```bash
+   python -m app.api
+   ```
+
+3. **Start the frontend** (from the frontend directory):
+   ```bash
+   npm start
+   ```
+
+The frontend will be available at `http://localhost:3000` and automatically connects to the API at `http://localhost:5000`.
+
+For detailed frontend setup instructions, see [FRONTEND_SETUP.md](FRONTEND_SETUP.md).
 
 
 ## Scopes and tokens
