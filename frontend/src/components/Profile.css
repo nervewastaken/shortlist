@@ -1,0 +1,54 @@
+.profile {
+  width: 100%;
+}
+
+.profile-section {
+  margin-bottom: 2rem;
+}
+
+.profile-section:last-child {
+  margin-bottom: 0;
+}
+
+.profile-field {
+  margin-bottom: 1.5rem;
+}
+
+.profile-field label {
+  display: block;
+  font-weight: 600;
+  color: #667eea;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.profile-value {
+  font-size: 1.1rem;
+  color: #333;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border-left: 3px solid #667eea;
+}
+
+.profile-value .empty {
+  color: #999;
+  font-style: italic;
+}
+
+.info-box {
+  background: #e7f3ff;
+  border-left: 4px solid #2196F3;
+  padding: 1rem;
+  border-radius: 6px;
+  margin-top: 1.5rem;
+}
+
+.info-box p {
+  margin: 0;
+  color: #0c5460;
+  line-height: 1.6;
+}
+

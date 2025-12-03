@@ -90,7 +90,7 @@ def ensure_credentials() -> Credentials:
             # Launch a local server and open the default browser; if that fails, it prints the URL.
             creds = flow.run_local_server(
                 host="localhost",
-                port=8088,  # change if occupied
+                port=0,  # change if occupied
                 authorization_prompt_message="Please authorize this app by visiting: {url}",
                 success_message="Authentication complete. You may close this tab.",
                 open_browser=True,
